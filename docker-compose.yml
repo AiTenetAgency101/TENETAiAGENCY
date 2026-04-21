@@ -1,0 +1,153 @@
+version: '3.9'
+
+services:
+  # Engine 365-Days: Core validation engine with 3-consensus validators
+  engine-365-days:
+    image: python:3.11-slim
+    container_name: engine-365-days
+    environment:
+      - ENGINE_TYPE=VALIDATOR_GRID
+      - CYCLES_LIMIT=12104208
+      - CONSENSUS_MODE=CIRCLE_MONOTONIC_RANGE
+    volumes:
+      - engine-365-logs:/logs
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/metrics.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    mem_limit: 512m
+    cpus: '2'
+    networks:
+      - tenet-internal
+    labels:
+      monitor: "robdoe.com"
+      role: "validator"
+
+  # Ultimate Engine: Sovereign decision architecture
+  ultimate-engine:
+    image: python:3.11-slim
+    container_name: ultimate-engine
+    environment:
+      - ENGINE_TYPE=ULTIMATE_SOVEREIGN
+      - BYZANTINE_LAYERS=12
+      - SOVEREIGNTY_ORDERS=10
+    volumes:
+      - ultimate-logs:/logs
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/ultimate_sovereign_metrics.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    mem_limit: 1g
+    cpus: '4'
+    networks:
+      - tenet-internal
+    labels:
+      monitor: "robdoe.com"
+      role: "sovereign"
+
+  # TENETAiAGENCY 101: Main agency coordinator
+  tenetaiagency-101:
+    image: python:3.11-slim
+    container_name: tenetaiagency-101
+    environment:
+      - AGENCY_MODE=COORDINATOR
+      - HEARTBEAT_INTERVAL=3600
+    volumes:
+      - tenet-logs:/logs
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/metrics.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    mem_limit: 512m
+    cpus: '2'
+    networks:
+      - tenet-internal
+    labels:
+      monitor: "robdoe.com"
+      role: "coordinator"
+
+  # Public Metrics Dashboard (robdoe.com)
+  metrics-dashboard:
+    image: nginx:alpine
+    container_name: metrics-dashboard
+    ports:
+      - "80:80"
+    volumes:
+      - ./dashboards/public:/usr/share/nginx/html:ro
+      - ./nginx/public.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - tenet-internal
+    depends_on:
+      - engine-365-days
+      - ultimate-engine
+      - tenetaiagency-101
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      domain: "robdoe.com"
+      access: "public"
+
+  # Private Admin Dashboard (robertdoe.pw)
+  admin-dashboard:
+    image: nginx:alpine
+    container_name: admin-dashboard
+    ports:
+      - "8443:443"
+    volumes:
+      - ./dashboards/private:/usr/share/nginx/html:ro
+      - ./nginx/private.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - tenet-internal
+    depends_on:
+      - engine-365-days
+      - ultimate-engine
+      - tenetaiagency-101
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      domain: "robertdoe.pw"
+      access: "private"
+
+  # Log Aggregator & Metrics Collector
+  log-collector:
+    image: python:3.11-slim
+    container_name: log-collector
+    volumes:
+      - engine-365-logs:/logs/engine-365:ro
+      - ultimate-logs:/logs/ultimate:ro
+      - tenet-logs:/logs/tenet:ro
+      - ./collector:/app
+    working_dir: /app
+    networks:
+      - tenet-internal
+    depends_on:
+      - engine-365-days
+      - ultimate-engine
+      - tenetaiagency-101
+    labels:
+      role: "aggregator"
+
+networks:
+  tenet-internal:
+    driver: bridge
+    name: tenet-network
+
+volumes:
+  engine-365-logs:
+    driver: local
+  ultimate-logs:
+    driver: local
+  tenet-logs:
+    driver: local
