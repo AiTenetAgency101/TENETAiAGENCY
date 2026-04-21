@@ -1,92 +1,682 @@
 version: '3.9'
 
 services:
-  # Engine 365-Days: Core validation engine with 3-consensus validators
-  engine-365-days:
+  # ============================================================================
+  # SATELLITE DATA INGESTION LAYER
+  # ============================================================================
+  
+  satellite-bom:
     image: python:3.11-slim
-    container_name: engine-365-days
+    container_name: satellite-bom
     environment:
-      - ENGINE_TYPE=VALIDATOR_GRID
-      - CYCLES_LIMIT=12104208
-      - CONSENSUS_MODE=CIRCLE_MONOTONIC_RANGE
+      SATELLITE_ID: "BOM"
+      SATELLITE_REGION: "Australia"
+      TILE_BANDS: "VIS,IR,WV"
+      DECOMPOSITION_LEVEL: 5
     volumes:
+      - ./ingestion/bom:/app
+      - bom-tiles:/data/tiles
+      - bom-logs:/logs
+    working_dir: /app
+    command: python decompose_and_hash.py
+    networks:
+      - witness-mesh
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/status.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      layer: "satellite-ingestion"
+      role: "data-source"
+
+  satellite-himawari:
+    image: python:3.11-slim
+    container_name: satellite-himawari
+    environment:
+      SATELLITE_ID: "Himawari-8"
+      SATELLITE_REGION: "Pacific"
+      TILE_BANDS: "VIS,IR,WV"
+      DECOMPOSITION_LEVEL: 5
+    volumes:
+      - ./ingestion/himawari:/app
+      - himawari-tiles:/data/tiles
+      - himawari-logs:/logs
+    working_dir: /app
+    command: python decompose_and_hash.py
+    networks:
+      - witness-mesh
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/status.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      layer: "satellite-ingestion"
+      role: "data-source"
+
+  satellite-goes:
+    image: python:3.11-slim
+    container_name: satellite-goes
+    environment:
+      SATELLITE_ID: "GOES-16"
+      SATELLITE_REGION: "Americas"
+      TILE_BANDS: "VIS,IR,WV"
+      DECOMPOSITION_LEVEL: 5
+    volumes:
+      - ./ingestion/goes:/app
+      - goes-tiles:/data/tiles
+      - goes-logs:/logs
+    working_dir: /app
+    command: python decompose_and_hash.py
+    networks:
+      - witness-mesh
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/status.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      layer: "satellite-ingestion"
+      role: "data-source"
+
+  satellite-meteosat:
+    image: python:3.11-slim
+    container_name: satellite-meteosat
+    environment:
+      SATELLITE_ID: "Meteosat-11"
+      SATELLITE_REGION: "Europe_Africa"
+      TILE_BANDS: "VIS,IR,WV"
+      DECOMPOSITION_LEVEL: 5
+    volumes:
+      - ./ingestion/meteosat:/app
+      - meteosat-tiles:/data/tiles
+      - meteosat-logs:/logs
+    working_dir: /app
+    command: python decompose_and_hash.py
+    networks:
+      - witness-mesh
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/status.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      layer: "satellite-ingestion"
+      role: "data-source"
+
+  # ============================================================================
+  # CRYPTOGRAPHIC HASHING LAYER
+  # ============================================================================
+
+  hash-engine:
+    image: python:3.11-slim
+    container_name: hash-engine
+    environment:
+      HASH_ALGORITHM: "SHA256"
+      METADATA_BINDING: "true"
+      BATCH_SIZE: 100
+    volumes:
+      - ./hashing:/app
+      - bom-tiles:/data/bom:ro
+      - himawari-tiles:/data/himawari:ro
+      - goes-tiles:/data/goes:ro
+      - meteosat-tiles:/data/meteosat:ro
+      - hash-ledger:/data/ledger
+      - hash-logs:/logs
+    working_dir: /app
+    command: python hash_pipeline.py
+    networks:
+      - witness-mesh
+    depends_on:
+      - satellite-bom
+      - satellite-himawari
+      - satellite-goes
+      - satellite-meteosat
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/hashes.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      layer: "cryptographic"
+      role: "integrity-verification"
+
+  # ============================================================================
+  # XYO BOUND-WITNESS MESH LAYER
+  # ============================================================================
+
+  witness-node-1:
+    image: python:3.11-slim
+    container_name: witness-node-1
+    environment:
+      WITNESS_ID: "WIT_001"
+      WITNESS_REGION: "Sydney"
+      XYO_LEDGER_MODE: "bound-witness"
+    volumes:
+      - ./witness:/app
+      - hash-ledger:/data/ledger:ro
+      - witness-1-logs:/logs
+      - witness-1-state:/data/state
+    working_dir: /app
+    command: python witness_node.py
+    networks:
+      - witness-mesh
+    depends_on:
+      - hash-engine
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/witness.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      layer: "witness-mesh"
+      role: "attestation-node"
+
+  witness-node-2:
+    image: python:3.11-slim
+    container_name: witness-node-2
+    environment:
+      WITNESS_ID: "WIT_002"
+      WITNESS_REGION: "Tokyo"
+      XYO_LEDGER_MODE: "bound-witness"
+    volumes:
+      - ./witness:/app
+      - hash-ledger:/data/ledger:ro
+      - witness-2-logs:/logs
+      - witness-2-state:/data/state
+    working_dir: /app
+    command: python witness_node.py
+    networks:
+      - witness-mesh
+    depends_on:
+      - hash-engine
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/witness.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      layer: "witness-mesh"
+      role: "attestation-node"
+
+  witness-node-3:
+    image: python:3.11-slim
+    container_name: witness-node-3
+    environment:
+      WITNESS_ID: "WIT_003"
+      WITNESS_REGION: "Houston"
+      XYO_LEDGER_MODE: "bound-witness"
+    volumes:
+      - ./witness:/app
+      - hash-ledger:/data/ledger:ro
+      - witness-3-logs:/logs
+      - witness-3-state:/data/state
+    working_dir: /app
+    command: python witness_node.py
+    networks:
+      - witness-mesh
+    depends_on:
+      - hash-engine
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/witness.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      layer: "witness-mesh"
+      role: "attestation-node"
+
+  # ============================================================================
+  # BYZANTINE CONSENSUS LAYER (14 ENGINES)
+  # ============================================================================
+
+  # Core Ring (3 engines)
+  engine-365:
+    image: python:3.11-slim
+    container_name: engine-365
+    environment:
+      ENGINE_ID: "E01"
+      ENGINE_ROLE: "CORE_IDENTITY_ANCHOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+      CYCLE_MODE: "witness-validation"
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-365-state:/data/state
       - engine-365-logs:/logs
+    working_dir: /app
+    command: python engine_365.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    depends_on:
+      - witness-node-1
+      - witness-node-2
+      - witness-node-3
     healthcheck:
       test: ["CMD", "test", "-f", "/logs/metrics.json"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 5s
     mem_limit: 512m
     cpus: '2'
-    networks:
-      - tenet-internal
     labels:
-      monitor: "robdoe.com"
-      role: "validator"
+      layer: "byzantine-consensus"
+      role: "core-validator"
+      engine: "E01"
 
-  # Ultimate Engine: Sovereign decision architecture
-  ultimate-engine:
+  engine-777:
     image: python:3.11-slim
-    container_name: ultimate-engine
+    container_name: engine-777
     environment:
-      - ENGINE_TYPE=ULTIMATE_SOVEREIGN
-      - BYZANTINE_LAYERS=12
-      - SOVEREIGNTY_ORDERS=10
+      ENGINE_ID: "E02"
+      ENGINE_ROLE: "STRUCTURE_ROOT"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+      CYCLE_MODE: "witness-validation"
     volumes:
-      - ultimate-logs:/logs
-    healthcheck:
-      test: ["CMD", "test", "-f", "/logs/ultimate_sovereign_metrics.json"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-    mem_limit: 1g
-    cpus: '4'
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-777-state:/data/state
+      - engine-777-logs:/logs
+    working_dir: /app
+    command: python engine_777.py
     networks:
-      - tenet-internal
-    labels:
-      monitor: "robdoe.com"
-      role: "sovereign"
-
-  # TENETAiAGENCY 101: Main agency coordinator
-  tenetaiagency-101:
-    image: python:3.11-slim
-    container_name: tenetaiagency-101
-    environment:
-      - AGENCY_MODE=COORDINATOR
-      - HEARTBEAT_INTERVAL=3600
-    volumes:
-      - tenet-logs:/logs
+      - consensus-ring
+      - witness-mesh
+    depends_on:
+      - witness-node-1
+      - witness-node-2
+      - witness-node-3
     healthcheck:
       test: ["CMD", "test", "-f", "/logs/metrics.json"]
       interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 5s
     mem_limit: 512m
     cpus: '2'
-    networks:
-      - tenet-internal
     labels:
-      monitor: "robdoe.com"
-      role: "coordinator"
+      layer: "byzantine-consensus"
+      role: "core-validator"
+      engine: "E02"
 
-  # Public Metrics Dashboard (robdoe.com)
-  metrics-dashboard:
+  engine-101:
+    image: python:3.11-slim
+    container_name: engine-101
+    environment:
+      ENGINE_ID: "E03"
+      ENGINE_ROLE: "FLOW_VECTOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+      CYCLE_MODE: "witness-validation"
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-101-state:/data/state
+      - engine-101-logs:/logs
+    working_dir: /app
+    command: python engine_101.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    depends_on:
+      - witness-node-1
+      - witness-node-2
+      - witness-node-3
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/metrics.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    mem_limit: 512m
+    cpus: '2'
+    labels:
+      layer: "byzantine-consensus"
+      role: "core-validator"
+      engine: "E03"
+
+  # Peer Ring (11 engines, E04-E14)
+  engine-04:
+    image: python:3.11-slim
+    container_name: engine-04
+    environment:
+      ENGINE_ID: "E04"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-04-state:/data/state
+      - engine-04-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E04"
+
+  engine-05:
+    image: python:3.11-slim
+    container_name: engine-05
+    environment:
+      ENGINE_ID: "E05"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-05-state:/data/state
+      - engine-05-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E05"
+
+  engine-06:
+    image: python:3.11-slim
+    container_name: engine-06
+    environment:
+      ENGINE_ID: "E06"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-06-state:/data/state
+      - engine-06-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E06"
+
+  engine-07:
+    image: python:3.11-slim
+    container_name: engine-07
+    environment:
+      ENGINE_ID: "E07"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-07-state:/data/state
+      - engine-07-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E07"
+
+  engine-08:
+    image: python:3.11-slim
+    container_name: engine-08
+    environment:
+      ENGINE_ID: "E08"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-08-state:/data/state
+      - engine-08-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E08"
+
+  engine-09:
+    image: python:3.11-slim
+    container_name: engine-09
+    environment:
+      ENGINE_ID: "E09"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-09-state:/data/state
+      - engine-09-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E09"
+
+  engine-10:
+    image: python:3.11-slim
+    container_name: engine-10
+    environment:
+      ENGINE_ID: "E10"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-10-state:/data/state
+      - engine-10-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E10"
+
+  engine-11:
+    image: python:3.11-slim
+    container_name: engine-11
+    environment:
+      ENGINE_ID: "E11"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-11-state:/data/state
+      - engine-11-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E11"
+
+  engine-12:
+    image: python:3.11-slim
+    container_name: engine-12
+    environment:
+      ENGINE_ID: "E12"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-12-state:/data/state
+      - engine-12-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E12"
+
+  engine-13:
+    image: python:3.11-slim
+    container_name: engine-13
+    environment:
+      ENGINE_ID: "E13"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-13-state:/data/state
+      - engine-13-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E13"
+
+  engine-14:
+    image: python:3.11-slim
+    container_name: engine-14
+    environment:
+      ENGINE_ID: "E14"
+      ENGINE_ROLE: "PEER_VALIDATOR"
+      BYZANTINE_QUORUM: 10
+      K_VALUE_TARGET: 0.99
+    volumes:
+      - ./engines:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-14-state:/data/state
+      - engine-14-logs:/logs
+    working_dir: /app
+    command: python engine_peer.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    mem_limit: 256m
+    cpus: '1'
+    labels:
+      layer: "byzantine-consensus"
+      role: "peer-validator"
+      engine: "E14"
+
+  # ============================================================================
+  # GRID AGGREGATION & VERIFICATION LAYER
+  # ============================================================================
+
+  grid-aggregator:
+    image: python:3.11-slim
+    container_name: grid-aggregator
+    environment:
+      AGGREGATION_MODE: "witnessed-grid"
+      GRID_RESOLUTION: "0.5-degree"
+      K_VALUE_THRESHOLD: 0.99
+    volumes:
+      - ./aggregation:/app
+      - hash-ledger:/data/ledger:ro
+      - engine-365-state:/data/e01:ro
+      - engine-777-state:/data/e02:ro
+      - engine-101-state:/data/e03:ro
+      - engine-04-state:/data/e04:ro
+      - engine-05-state:/data/e05:ro
+      - engine-06-state:/data/e06:ro
+      - engine-07-state:/data/e07:ro
+      - engine-08-state:/data/e08:ro
+      - engine-09-state:/data/e09:ro
+      - engine-10-state:/data/e10:ro
+      - engine-11-state:/data/e11:ro
+      - engine-12-state:/data/e12:ro
+      - engine-13-state:/data/e13:ro
+      - engine-14-state:/data/e14:ro
+      - grid-cache:/data/grid
+      - grid-logs:/logs
+    working_dir: /app
+    command: python grid_aggregator.py
+    networks:
+      - consensus-ring
+      - witness-mesh
+    depends_on:
+      - engine-365
+      - engine-777
+      - engine-101
+    healthcheck:
+      test: ["CMD", "test", "-f", "/logs/grid_status.json"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    labels:
+      layer: "aggregation"
+      role: "grid-verification"
+
+  # ============================================================================
+  # PUBLIC DASHBOARD (robdoe.com)
+  # ============================================================================
+
+  public-dashboard:
     image: nginx:alpine
-    container_name: metrics-dashboard
+    container_name: public-dashboard
     ports:
       - "80:80"
     volumes:
       - ./dashboards/public:/usr/share/nginx/html:ro
       - ./nginx/public.conf:/etc/nginx/nginx.conf:ro
     networks:
-      - tenet-internal
+      - witness-mesh
     depends_on:
-      - engine-365-days
-      - ultimate-engine
-      - tenetaiagency-101
+      - grid-aggregator
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 10s
@@ -95,22 +685,24 @@ services:
     labels:
       domain: "robdoe.com"
       access: "public"
+      content: "witnessed-atmospheric-grid"
 
-  # Private Admin Dashboard (robertdoe.pw)
-  admin-dashboard:
+  # ============================================================================
+  # PRIVATE ADMIN DASHBOARD (robertdoe.pw)
+  # ============================================================================
+
+  private-dashboard:
     image: nginx:alpine
-    container_name: admin-dashboard
+    container_name: private-dashboard
     ports:
       - "8443:443"
     volumes:
       - ./dashboards/private:/usr/share/nginx/html:ro
       - ./nginx/private.conf:/etc/nginx/nginx.conf:ro
     networks:
-      - tenet-internal
+      - witness-mesh
     depends_on:
-      - engine-365-days
-      - ultimate-engine
-      - tenetaiagency-101
+      - grid-aggregator
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
       interval: 10s
@@ -119,35 +711,139 @@ services:
     labels:
       domain: "robertdoe.pw"
       access: "private"
+      content: "ledger-forensics-witness-status"
 
-  # Log Aggregator & Metrics Collector
-  log-collector:
+  # ============================================================================
+  # MONITORING & TELEMETRY
+  # ============================================================================
+
+  telemetry-collector:
     image: python:3.11-slim
-    container_name: log-collector
+    container_name: telemetry-collector
+    environment:
+      COLLECTION_MODE: "cycle-based"
+      METRICS_INTERVAL: 100
     volumes:
-      - engine-365-logs:/logs/engine-365:ro
-      - ultimate-logs:/logs/ultimate:ro
-      - tenet-logs:/logs/tenet:ro
-      - ./collector:/app
+      - ./telemetry:/app
+      - engine-365-logs:/data/e01:ro
+      - engine-777-logs:/data/e02:ro
+      - engine-101-logs:/data/e03:ro
+      - hash-logs:/data/hash:ro
+      - witness-1-logs:/data/wit1:ro
+      - witness-2-logs:/data/wit2:ro
+      - witness-3-logs:/data/wit3:ro
+      - telemetry-logs:/logs
     working_dir: /app
+    command: python telemetry_service.py
     networks:
-      - tenet-internal
-    depends_on:
-      - engine-365-days
-      - ultimate-engine
-      - tenetaiagency-101
+      - witness-mesh
+      - consensus-ring
     labels:
-      role: "aggregator"
+      role: "observability"
 
 networks:
-  tenet-internal:
+  witness-mesh:
     driver: bridge
-    name: tenet-network
+    name: xyo-witness-network
+  consensus-ring:
+    driver: bridge
+    name: byzantine-consensus-network
 
 volumes:
+  # Satellite ingestion
+  bom-tiles:
+    driver: local
+  himawari-tiles:
+    driver: local
+  goes-tiles:
+    driver: local
+  meteosat-tiles:
+    driver: local
+
+  # Hashing & ledger
+  hash-ledger:
+    driver: local
+  hash-logs:
+    driver: local
+
+  # Witness nodes
+  witness-1-logs:
+    driver: local
+  witness-1-state:
+    driver: local
+  witness-2-logs:
+    driver: local
+  witness-2-state:
+    driver: local
+  witness-3-logs:
+    driver: local
+  witness-3-state:
+    driver: local
+
+  # Engine states & logs
+  engine-365-state:
+    driver: local
   engine-365-logs:
     driver: local
-  ultimate-logs:
+  engine-777-state:
     driver: local
-  tenet-logs:
+  engine-777-logs:
+    driver: local
+  engine-101-state:
+    driver: local
+  engine-101-logs:
+    driver: local
+  engine-04-state:
+    driver: local
+  engine-04-logs:
+    driver: local
+  engine-05-state:
+    driver: local
+  engine-05-logs:
+    driver: local
+  engine-06-state:
+    driver: local
+  engine-06-logs:
+    driver: local
+  engine-07-state:
+    driver: local
+  engine-07-logs:
+    driver: local
+  engine-08-state:
+    driver: local
+  engine-08-logs:
+    driver: local
+  engine-09-state:
+    driver: local
+  engine-09-logs:
+    driver: local
+  engine-10-state:
+    driver: local
+  engine-10-logs:
+    driver: local
+  engine-11-state:
+    driver: local
+  engine-11-logs:
+    driver: local
+  engine-12-state:
+    driver: local
+  engine-12-logs:
+    driver: local
+  engine-13-state:
+    driver: local
+  engine-13-logs:
+    driver: local
+  engine-14-state:
+    driver: local
+  engine-14-logs:
+    driver: local
+
+  # Aggregation & grid
+  grid-cache:
+    driver: local
+  grid-logs:
+    driver: local
+
+  # Telemetry
+  telemetry-logs:
     driver: local
