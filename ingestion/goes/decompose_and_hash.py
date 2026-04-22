@@ -3,8 +3,8 @@ import os, sys, json, hashlib, time
 from datetime import datetime
 from pathlib import Path
 
-satellite_id = os.getenv('SATELLITE_ID', 'BOM')
-region = os.getenv('SATELLITE_REGION', 'Australia')
+satellite_id = os.getenv('SATELLITE_ID', 'GOES-16')
+region = os.getenv('SATELLITE_REGION', 'Americas')
 decomp_level = int(os.getenv('DECOMPOSITION_LEVEL', '5'))
 
 tile_dir = Path('/data/tiles')
