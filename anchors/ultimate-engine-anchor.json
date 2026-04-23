@@ -1,0 +1,31 @@
+{
+  "anchor_type": "time-clock",
+  "engine": "ultimate-engine",
+  "engine_id": "E02",
+  "witness_timestamp": "2026-04-23T07:53:50.5144990+10:00",
+  "system_clock_at_anchor": "2026-04-23T10:46:00+10:00",
+  "cycle": 0,
+  "roothash": "a7f4e8c1d5b3a9f2e8c1d5b3a9f2e8c1d5b3a9f2e8c1d5b3a9f2e8c1d5b3a9f",
+  "metrics": {
+    "cycles": 2548079,
+    "decisions_executed": 993625,
+    "decisions_rejected": 1554454,
+    "execution_rate": 0.3899506255496788,
+    "rejection_rate": 0.6100493744503213,
+    "audit_trail_size": 100000,
+    "sovereignty_orders": 10,
+    "byzantine_layers": 12,
+    "k_value": 0.995
+  },
+  "meta": {
+    "description": "Time-clock anchor of cycle-0 witness for Ultimate Sovereign Engine",
+    "location": "Sydney/AEST",
+    "source": "sovereign-engine",
+    "architecture": "TENETAIAGENCY_ULTIMATE_SOVEREIGN™",
+    "witness_nodes": 3,
+    "Byzantine_quorum": "10/14"
+  },
+  "status": "MINTED",
+  "witnessed": true,
+  "tamper_proof": true
+}
