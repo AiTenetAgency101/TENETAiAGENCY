@@ -219,43 +219,51 @@
     </div>
 
     <script>
-        // Simulated metrics polling (replace with real API calls)
-        function updateMetrics() {
-            // These would come from your actual containers
-            const metrics = {
-                engine365: {
-                    cycles: Math.floor(Math.random() * 12104208) + 1000000,
-                    health: 29,
-                    time: new Date().toLocaleTimeString()
-                },
-                ultimate: {
-                    cycles: Math.floor(Math.random() * 2548079) + 100000,
-                    exec: (Math.random() * 40 + 35).toFixed(2),
-                    time: new Date().toLocaleTimeString()
-                },
-                tenet: {
-                    ticks: Math.floor(Math.random() * 641642364) + 1000000,
-                    rejected: 100,
-                    drift: (Math.random() * 320821187 + 100000000).toFixed(0),
-                    time: new Date().toLocaleTimeString()
+        async function updateMetrics() {
+            try {
+                const response = await fetch('/api/metrics');
+                if (!response.ok) throw new Error('API failed');
+                const data = await response.json();
+                const engines = data.engines || {};
+                const time = new Date().toLocaleTimeString();
+
+                // Engine 365-Days
+                if (engines.E01_engine_365_days) {
+                    const e01 = engines.E01_engine_365_days;
+                    document.getElementById('engine365-cycles').textContent = 
+                        (e01.cycles_completed || 0).toLocaleString();
+                    document.getElementById('engine365-health').style.width = 
+                        (e01.consensus_rate * 100 || 29) + '%';
+                    document.getElementById('engine365-time').textContent = 'Last update: ' + time;
                 }
-            };
 
-            document.getElementById('engine365-cycles').textContent = metrics.engine365.cycles.toLocaleString();
-            document.getElementById('engine365-health').style.width = metrics.engine365.health + '%';
-            document.getElementById('engine365-time').textContent = 'Last update: ' + metrics.engine365.time;
+                // Ultimate Engine
+                if (engines.E02_ultimate_engine) {
+                    const e02 = engines.E02_ultimate_engine;
+                    document.getElementById('ultimate-cycles').textContent = 
+                        (e02.cycles || 0).toLocaleString();
+                    document.getElementById('ultimate-exec').textContent = 
+                        ((e02.execution_rate || 0) * 100).toFixed(2) + '%';
+                    document.getElementById('ultimate-time').textContent = 'Last update: ' + time;
+                }
 
-            document.getElementById('ultimate-cycles').textContent = metrics.ultimate.cycles.toLocaleString();
-            document.getElementById('ultimate-exec').textContent = metrics.ultimate.exec + '%';
-            document.getElementById('ultimate-time').textContent = 'Last update: ' + metrics.ultimate.time;
-
-            document.getElementById('tenet-ticks').textContent = metrics.tenet.ticks.toLocaleString();
-            document.getElementById('tenet-rejected').textContent = metrics.tenet.rejected + '%';
-            document.getElementById('tenet-drift').textContent = metrics.tenet.drift;
-            document.getElementById('tenet-time').textContent = 'Last update: ' + metrics.tenet.time;
+                // TENET Agency 101
+                if (engines.E03_tenetaiagency_101) {
+                    const e03 = engines.E03_tenetaiagency_101;
+                    document.getElementById('tenet-ticks').textContent = 
+                        (e03.ticks || 0).toLocaleString();
+                    document.getElementById('tenet-rejected').textContent = 
+                        ((e03.rejection_rate || 1.0) * 100).toFixed(0) + '%';
+                    document.getElementById('tenet-drift').textContent = 
+                        (e03.drift_ratio || 0).toLocaleString();
+                    document.getElementById('tenet-time').textContent = 'Last update: ' + time;
+                }
+            } catch (e) {
+                console.log('Metrics update in progress...');
+            }
         }
 
-        // Update every 5 seconds
+        // Update on load and every 5 seconds
         updateMetrics();
         setInterval(updateMetrics, 5000);
     </script>

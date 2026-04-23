@@ -1,15 +1,13 @@
 version: '3.9'
 
 services:
-  # Engine 365-Days: Core validation engine (12M+ cycles)
+  # Three core engines (already running)
   engine-365-days:
     image: python:3.11-slim
     container_name: engine-365-days
     environment:
       ENGINE_ID: "E01"
       ENGINE_NAME: "engine-365-days"
-      CYCLES_TARGET: 12104208
-      CONSENSUS_MODE: "CIRCLE_MONOTONIC_RANGE"
     volumes:
       - ./engines:/app
       - engine-365-logs:/logs
@@ -22,22 +20,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
-      start_period: 2s
     mem_limit: 512m
     cpus: '2'
-    labels:
-      role: "core-validator"
 
-  # Ultimate Engine: Sovereign decision architecture (2.5M+ cycles)
   ultimate-engine:
     image: python:3.11-slim
     container_name: ultimate-engine
     environment:
       ENGINE_ID: "E02"
       ENGINE_NAME: "ultimate-engine"
-      CYCLES_TARGET: 2548079
-      BYZANTINE_LAYERS: 12
-      SOVEREIGNTY_ORDERS: 10
     volumes:
       - ./engines:/app
       - ultimate-logs:/logs
@@ -50,21 +41,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
-      start_period: 2s
     mem_limit: 1g
     cpus: '2'
-    labels:
-      role: "sovereign-validator"
 
-  # TENET Agency 101: Coordinator (641M+ ticks)
   tenetaiagency-101:
     image: python:3.11-slim
     container_name: tenetaiagency-101
     environment:
       ENGINE_ID: "E03"
       ENGINE_NAME: "tenetaiagency-101"
-      TICKS_TARGET: 641642364
-      HEARTBEAT_INTERVAL: 3600000
     volumes:
       - ./engines:/app
       - tenet-logs:/logs
@@ -77,11 +62,96 @@ services:
       interval: 5s
       timeout: 3s
       retries: 3
-      start_period: 2s
     mem_limit: 512m
     cpus: '2'
+
+  # ============================================================================
+  # PUBLIC DASHBOARD (robdoe.com)
+  # ============================================================================
+  public-dashboard:
+    image: nginx:alpine
+    container_name: public-dashboard
+    ports:
+      - "80:80"
+    volumes:
+      - ./dashboards/public/index.html:/usr/share/nginx/html/index.html:ro
+      - ./nginx/public.conf:/etc/nginx/nginx.conf:ro
+      - ./public-certs:/etc/nginx/certs:ro
+    networks:
+      - tenet-network
+    depends_on:
+      - engine-365-days
+      - ultimate-engine
+      - tenetaiagency-101
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    environment:
+      - DOMAIN=robdoe.com
     labels:
-      role: "coordinator"
+      domain: "robdoe.com"
+      access: "public"
+      content: "atmospheric-grid-metrics"
+
+  # ============================================================================
+  # PRIVATE ADMIN DASHBOARD (robertdoe.pw)
+  # ============================================================================
+  private-dashboard:
+    image: nginx:alpine
+    container_name: private-dashboard
+    ports:
+      - "443:443"
+      - "8443:8443"
+    volumes:
+      - ./dashboards/private/index.html:/usr/share/nginx/html/index.html:ro
+      - ./nginx/private.conf:/etc/nginx/nginx.conf:ro
+      - ./private-certs:/etc/nginx/certs:ro
+    networks:
+      - tenet-network
+    depends_on:
+      - engine-365-days
+      - ultimate-engine
+      - tenetaiagency-101
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    environment:
+      - DOMAIN=robertdoe.pw
+    labels:
+      domain: "robertdoe.pw"
+      access: "private"
+      content: "ledger-forensics-admin"
+
+  # ============================================================================
+  # METRICS API SERVER (serves JSON data to dashboards)
+  # ============================================================================
+  metrics-api:
+    image: python:3.11-slim
+    container_name: metrics-api
+    volumes:
+      - ./metrics-api:/app
+      - engine-365-logs:/logs/e01:ro
+      - ultimate-logs:/logs/e02:ro
+      - tenet-logs:/logs/e03:ro
+    working_dir: /app
+    command: python3 server.py
+    networks:
+      - tenet-network
+    ports:
+      - "9001:9001"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - engine-365-days
+      - ultimate-engine
+      - tenetaiagency-101
 
 networks:
   tenet-network:
